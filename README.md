@@ -1,12 +1,12 @@
-# PET (Selectively Regularized Pruning)
-This project is a PyTorch implementation of SRP (Selectively Regularized Pruning) on Transformer. SRP proposes a novel approach that improves structured pruning performance. This package is especially for Transformer model.  
+# PET (Parameter-Efficient Knowledge Distillation on Transformer)
+This project is a PyTorch implementation of PET (Parameter-Efficient Knowledge Distillation on Transformer). PET proposes a novel approach that compresses transformer both the encoder and decoder, improving the performance of knowledge distillation(KD) on Transformer.
 
 ## Overview
-#### Brief Explanation of SRP. 
-SRP proposed a novel process for pruning Transfomer and works as following three steps.
+#### Brief Explanation of PET. 
+PET improves an overall process of Transformer KD as follows:
 
-#### 0. Defining Pruning-safe Architecture
-Before we start pruning process, we define that an architecture is pruning-safe for some parameters under some codition iff the inference of the model is consistent after pruning the parameters under the condition.
+#### 0. Defining Parameter-Efficient Architecture of the Transformer Encoder and Decoder
+We find a replaceable pairs of modules in each encoder and decoder. Replaceable pair indicates that paired modules are robust to weight-sharing.
 
 #### 1. Designing Pruning-safe Architecture
 
