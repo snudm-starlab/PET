@@ -5,54 +5,40 @@ This project is a PyTorch implementation of PET (Parameter-Efficient Knowledge D
 #### Brief Explanation of PET. 
 PET improves an overall process of Transformer KD as follows:
 
-#### 0. Defining Parameter-Efficient Architecture of the Transformer Encoder and Decoder
-We find a replaceable pairs of modules in each encoder and decoder. Replaceable pair indicates that paired modules are robust to weight-sharing.
+#### 1. Defining Parameter-Efficient Architecture of the Transformer Encoder and Decoder
 
-#### 1. Designing Pruning-safe Architecture
+We find a replaceable pairs of modules in each encoder and decoder. 
+Replaceable pair indicates that paired modules are robust to weight-sharing.
 
-We modify the architecture of Transformer to be pruning-safe. We introduce connectivity parameters and weighted layer normalization. 
-Our modified architecture is pruning safe when pruning parameters that its corresponding connectivity parameters are zero.
+#### 2. Pre-training the Compressed Model with Simplified Task
 
-#### 2. Selecting Parameters to be pruned
+To initialize a compressed model that well adapts to challenging tasks, 
+we pre-train the model with a simplified version of the original task, less challenging enough for its reduced sizes.
+We propose a method to improve the performance of pre-training task by modeling the predictions of the model.
 
-We compute the negative partial derivative of the objective function with respect to each connectivity parameter and use it as the importance score of the corresponding parameter. 
-We select parameters with the lowest importance score to be pruned.
+#### 3. Layer-wise Attention Head Sampling 
 
-#### 3. Shrinking Paramters with Selective Regularization
-
-We freeze the selected parameters and continuously shrinking corresponding connectivity parameters. 
-SRP proposes two types of shrinking strategies: arithmetic and geometrical shrinking.
-SRP proposed two-staged pruning which is a novel pruning strategy that prunes parameters within two stages.
+For further optimization, we train a wider compressed model, which has more attention heads than our compression target,
+and sample an efficient attention heads by layers.
 
 #### Code Description
 This repository is written based on the codes in [FAIRSEQ](https://github.com/facebookresearch/fairseq).
 Here's an overview of our codes.
 
 ``` Unicode
-SRP
+PET
   │
-  ├──  src    
+  ├──  (pet_git)    
   │     ├── criterions
-  │     │    └── srp.py: customized criterion for SRP
+  │     │    └── pet_cross_entropy.py: customized criterion for PET
   │     ├── models
-  │     │    ├── srp_base.py: SRP model 
-  │     │    ├── srp_encoder.py: SRP encoder
-  │     │    ├── srp_decoder.py: SRP decoder
-  │     │    ├── srp_config.py: configurations for SRP
-  │     │    └── srp_legacy.py: the legacy implementation of the srp models
+  │     │    └── pet_transformer.py: the implementation of the PET models
   │     ├── modules
-  │     │    ├── layer_norm.py: codes for weighted layer normalization
-  │     │    ├── multihead_attention.py: modified codes for multihead attention
-  │     │    └── srp_layer.py : layers of encoder and decoder of SRP
-  │     ├── optim
-  │     │    └── SRPadam.py : customized Adam optimizer for SRP
-  │     ├── tasks
-  │     │    └── SRPtranslation : customized translation task for SRP
+  │     │    ├── pet_multihead_attention.py: multihead attention for PET
+  │     │    └── pet_transformer_layer.py : layers of encoder and decoder of PET
   │     │    
   │     ├── train.py : codes for training a new model 
   │     ├── trainer.py : codes for managing training process 
-  │     ├── pruning.py : codes for pruning the pre-trained model
-  │     ├── finetuning.py : codes for finetuning the pruned model
   │     ├── generate.py : Translate pre-processed data with a trained model
   │     ├── sequence_generator.py : Codes for generating sequences
   │     ├── checkpoint_utils.py : Codes for saving and loading checkpoints
@@ -62,11 +48,7 @@ SRP
   ├──  scripts
   │     ├── iwslt_preprocess.sh: a script for downloading and preprocess iwslt14
   │     ├── prepare-iwslt14.sh : a script for preparing iwslt14 which is run by iwslt_preprocess.sh
-  │     ├── iwslt_srp.sh : a script for training a baseline model
-  │     ├── iwslt_srp_pruning.sh : a script for pruning the pre-trained model
-  │     ├── iwslt_srp_two_staged_pruning.sh : a script for performing two-staged pruning 
-  │     ├── iwslt_srp_finetuning.sh : a script for finetuning pruned model 
-  │     ├── iwslt_srp_test.sh: a script for testing the trained model
+  │     ├── iwslt_pet_test.sh: a script for testing the trained model
   │     └── demo.sh : a script for running demo  
   │     
   ├──  data-bin : a directory for saving datasets
@@ -114,15 +96,11 @@ make
 ```
 
 ## Run Your Own Training
-* We provide scripts for pre-training, pruning and testing.
+* We provide scripts for training and testing.
 Followings are key arguments:
     * arch: architecture type
     * compression-rate: target compreesion rate
-    * srp: whether use srp or not
-    * pruning-stage: the stage of pruning, use 0 for single-staged pruning
-    * pruning-iter: number of pruning iterations
-    * pruning-period: number of epochs for pruning process
-    * decreasing: decreasing type for connectivity parameters
+    * is-SPS: whether use PET or not
     * save-dir: path for saving checkpoints
     * pretrained-model: path for pre-trained model to be pruned
     
@@ -132,8 +110,8 @@ Followings are key arguments:
 CUDA_VISIBLE_DEVICES=0 python ../src/train.py \
     ../data-bin/iwslt14.tokenized.de-en \
     --user-dir ../src \
-    --arch srp_iwslt_de_en --share-decoder-input-output-embed \
-    --task SRPtranslation \
+    --arch pet_iwslt_de_en --share-decoder-input-output-embed \
+    --task translation \
     --optimizer srp_adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
     --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 \
     --dropout 0.3 --weight-decay 0.0001 \
@@ -147,126 +125,7 @@ CUDA_VISIBLE_DEVICES=0 python ../src/train.py \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir ../checkpoints/base \
 ```
-This code is also saved in scripts/iwslt_srp.sh
-
-* To perform pruning using SRP, run following scripts.
-
-For stage 1: 
-```
-CUDA_VISIBLE_DEVICES=0 python ../src/pruning.py \
-    ../data-bin/iwslt14.tokenized.de-en \
-    --user-dir ../src \
-    --arch srp_iwslt_de_en --share-decoder-input-output-embed \
-    --task SRPtranslation \
-    --optimizer srp_adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-    --lr 5e-4 \
-    --dropout 0.3 --weight-decay 0.0001 \
-    --criterion srp --label-smoothing 0.1 \
-    --max-epoch 20 --weighted-layernorm \
-    --compression-rate 0.2 --srp --pruning-stage 1 \
-    --save-interval 1 \
-    --pruning-iter 1 --pruning-period 20 --decreasing sa \
-    --max-tokens 4096 \
-    --eval-bleu \
-    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
-    --eval-bleu-detok moses \
-    --eval-bleu-remove-bpe \
-    --eval-bleu-print-samples \
-    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
-    --save-dir ../checkpoints/stage1 \
-    --pretrained-model ../checkpoints/base/checkpoint_best.pt \
-
-```
-
-For stage 2: 
-
-
-```
-CUDA_VISIBLE_DEVICES=0 python ..src/pruning.py \
-    ../data-bin/iwslt14.tokenized.de-en \
-    --user-dir ../src \
-    --arch srp_iwslt_de_en --share-decoder-input-output-embed \
-    --task SRPtranslation \
-    --optimizer srp_adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-    --lr 5e-4 \
-    --dropout 0.3 --weight-decay 0.0001 \
-    --criterion srp --label-smoothing 0.1 \
-    --compression-rate 0.2 --srp --pruning-stage 2 \
-    --save-interval 1 --weighted-layernorm \
-    --pruning-iter 1 --pruning-period 20 --decreasing sa \
-    --max-tokens 4096 \
-    --eval-bleu \
-    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
-    --eval-bleu-detok moses \
-    --eval-bleu-remove-bpe \
-    --eval-bleu-print-samples \
-    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
-    --save-dir ../checkpoints/stage2 \
-    --pretrained-model ../checkpoints/stage1/checkpoint_last.pt
-```
-
-These codes are also saved in scripts/iwslt_srp_two_staged_pruning.sh
-
-* If you want to perform single-staged pruning, run script:
-```
-CUDA_VISIBLE_DEVICES=0 python ../src/pruning.py \
-    ../data-bin/iwslt14.tokenized.de-en \
-    --user-dir ../src \
-    --arch srp_iwslt_de_en --share-decoder-input-output-embed \
-    --task SRPtranslation \
-    --optimizer srp_adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-    --lr 5e-4 \
-    --dropout 0.3 --weight-decay 0.0001 \
-    --criterion srp --label-smoothing 0.1 \
-    --compression-rate 0.2 --srp --pruning-stage 0 \
-    --pruning-iter 1 --pruning-period 20 --decreasing sa \
-    --max-tokens 4096 \
-    --eval-bleu \
-    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
-    --eval-bleu-detok moses \
-    --eval-bleu-remove-bpe \
-    --eval-bleu-print-samples \
-    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
-    --save-dir ../checkpoints/single_stage \
-    --pretrained-model ../checkpoints/base/checkpoint_best.pt
-
-```
-This code is also saved in scripts/iwslt_srp_two_staged_pruning.sh
-
-* To perform finetuning after pruning, run script:
-```
-CUDA_VISIBLE_DEVICES=0 python ../src/finetuning.py \
-    ../data-bin/iwslt14.tokenized.de-en \
-    --user-dir ../src \
-    --arch srp_iwslt_de_en --share-decoder-input-output-embed \
-    --task SRPtranslation \
-    --optimizer srp_adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-    --lr 5e-4 \
-    --dropout 0.3 --weight-decay 0.0001 \
-    --criterion srp --label-smoothing 0.1 \
-    --max-epoch 20 \
-    --max-tokens 4096 \
-    --eval-bleu \
-    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
-    --eval-bleu-detok moses \
-    --eval-bleu-remove-bpe \
-    --eval-bleu-print-samples \
-    --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
-    --save-dir ../checkpoints/finetuned \
-    --pretrained-model ../checkpoints/stage2/checkpoint_last.pt
-```
-This code is also saved in scripts/iwslt_srp_two_staged_pruning.sh
-
-* To testing after pruning, run script:
-```
-CUDA_VISIBLE_DEVICES=0 python ../src/generate.py ../data-bin/iwslt14.tokenized.de-en \
-    --user-dir ../src --arch srp_iwslt_de_en --task SRPtranslation \
-    --weighted-layernorm \
-    --path ../checkpoints/base/checkpoint_best.pt \
-    --batch-size 128 --beam 5 --remove-bpe
-```
-This code is also saved as scripts/iwslt_srp_two_staged_pruning.sh
-
+This code is also saved in scripts/iwslt_pet.sh
 
 ## Reference
 * FAIRSEQ: https://github.com/facebookresearch/fairseq
