@@ -1,5 +1,5 @@
 ################################################################################
-# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on KD)
+# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on Transformer)
 #
 # Author: Hyojin Jeon (tarahjjeon@snu.ac.kr), Seoul National University
 #         U Kang (ukang@snu.ac.kr), Seoul National University
@@ -57,12 +57,6 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
         embed_tokens,
         no_encoder_attn=False,
         output_projection=None,
-        is_self_attn_shuffle=False,
-        is_enc_attn_shuffle=False,
-        is_dec_kv_shuffle=False,
-        is_sharing=False,
-        is_stacked_type = 0,
-        is_self_enc_q_shuffle = False
     ):
         self.cfg = cfg
         super().__init__(dictionary)
@@ -123,25 +117,11 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
         else:
             self.layers = nn.ModuleList([])
         ### layer 이어 붙이기
-        self.is_self_attn_shuffle = is_self_attn_shuffle  # self-attention 의 query, key matrix sharing
-        self.is_enc_attn_shuffle = is_enc_attn_shuffle
-        self.is_dec_kv_shuffle = is_dec_kv_shuffle
-        self.is_self_enc_q_shuffle= is_self_enc_q_shuffle
-        #print("$$$$$$$$$$$$$is is_self_enc_q_shuffle:",self.is_self_enc_q_shuffle)
-        self.is_sharing=is_sharing  # self-attention 과 cross-attention의 query matrix sharing
-        self.is_stacked_type = is_stacked_type
-        ###
-        if is_stacked_type in [11,21,25,27]:
-            self.layers.extend(
-                [
-                    self.build_decoder_layer(cfg, no_encoder_attn, is_sharing=self.is_sharing) if l_dx == 0 else self.build_decoder_layer(cfg, no_encoder_attn, is_sharing=False)
-                    for l_dx, _ in enumerate(range(cfg.decoder.layers))
-                ]
-            )
-        else:
-            self.layers.extend(
+
+
+        self.layers.extend(
             [
-                self.build_decoder_layer(cfg, no_encoder_attn, is_sharing=self.is_sharing)
+                self.build_decoder_layer(cfg, no_encoder_attn)
                 for _ in range(cfg.decoder.layers)
             ]
         )
@@ -165,7 +145,6 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
 
     def build_output_projection(self, cfg, dictionary, embed_tokens):
         if cfg.adaptive_softmax_cutoff is not None:
-            print("adaptive_softmax_cuttoff")
             self.adaptive_softmax = AdaptiveSoftmax(
                 len(dictionary),
                 self.output_embed_dim,
@@ -176,25 +155,14 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
                 tie_proj=cfg.tie_adaptive_proj,
             )
         elif self.share_input_output_embed:
-            print("###is ptp label- change linear output share_intout###",self.embed_tokens.weight.shape) #6632,256
             self.output_projection = nn.Linear(
                 self.embed_tokens.weight.shape[1],
                 self.embed_tokens.weight.shape[0],
                 bias=False,
             )
             self.output_projection.weight = self.embed_tokens.weight
-        ### ptp label revised by hyojin
-        elif cfg.is_ptp_label:
-            print("###is ptp label- change linear output is-otot###")
-            self.output_projection = nn.Linear(
-                self.output_embed_dim, 4, bias=False
-            )
-            nn.init.normal_(
-                self.output_projection.weight, mean=0, std=self.output_embed_dim**-0.5
-            )
-        ##
+
         else:
-            print("###is ptp label- change linear output else###")
             self.output_projection = nn.Linear(
                 self.output_embed_dim, len(dictionary), bias=False
             )
@@ -208,11 +176,8 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
                 BaseLayer(cfg),
             )
 
-    def build_decoder_layer(self, cfg, no_encoder_attn=False,is_sharing=False):
-        layer = pet_transformer_layer.PetTransformerDecoderLayer(cfg, no_encoder_attn,is_sharing=is_sharing,
-                                                                  is_self_attn_shuffle=self.is_self_attn_shuffle,
-                                                                  is_enc_attn_shuffle=self.is_enc_attn_shuffle,
-                                                                  )
+    def build_decoder_layer(self, cfg, no_encoder_attn=False):
+        layer = pet_transformer_layer.PetTransformerDecoderLayer(cfg, no_encoder_attn)                                                      )
         checkpoint = cfg.checkpoint_activations
         if checkpoint:
             offload_to_cpu = cfg.offload_activations
@@ -369,117 +334,58 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
         # decoder layers
         attn: Optional[Tensor] = None
         inner_states: List[Optional[Tensor]] = [x]
-        if self.is_stacked_type > 20:
-            self.is_stacked_type -=20
-        if self.is_stacked_type == 0 or self.is_stacked_type ==11:
-            ### edited by hyojin
-            # stacking layers
-            for idx, layer in enumerate(self.layers):
-                if incremental_state is None and not full_context_alignment:
-                    self_attn_mask = self.buffered_future_mask(x)
-                else:
-                    self_attn_mask = None
 
-                x, layer_attn, _ = layer(
-                    x,
-                    enc,
-                    padding_mask,
-                    incremental_state,
-                    self_attn_mask=self_attn_mask,
-                    self_attn_padding_mask=self_attn_padding_mask,
-                    need_attn=bool((idx == alignment_layer)),
-                    need_head_weights=bool((idx == alignment_layer)),
-                    is_self_attn_shuffle=False,
-                    is_enc_attn_shuffle=False,
-                    is_self_enc_shuffled_q = False
-                )
-                inner_states.append(x)
-                if layer_attn is not None and idx == alignment_layer:
-                    attn = layer_attn.float().to(x)
-            ###############################
-            # edited by hyojin
-            # SPS: stacking layers (twice)
-            # if self.is_shuffle True, shuffle query and key parameters in the last half layers
-            ###############################
-            for idx, layer in enumerate(self.layers):
-                if incremental_state is None and not full_context_alignment:
-                    self_attn_mask = self.buffered_future_mask(x)
-                else:
-                    self_attn_mask = None
-                #Ap02-1 only shuffle self-attn in 2nd layer
-                # Ap02-2 only shuffle self-attn in 1st layer
-                #is_self_attn_shuffle = True if idx == 0 else False
-                x, layer_attn, _ = layer(
-                    x,
-                    enc,
-                    padding_mask,
-                    incremental_state,
-                    self_attn_mask=self_attn_mask,
-                    self_attn_padding_mask=self_attn_padding_mask,
-                    need_attn=bool((idx == alignment_layer)),
-                    need_head_weights=bool((idx == alignment_layer)),
-                    is_self_attn_shuffle=self.is_self_attn_shuffle,
-                    is_enc_attn_shuffle=self.is_enc_attn_shuffle,
-                    is_dec_kv_shuffle = self.is_dec_kv_shuffle,
-                    is_self_enc_shuffled_q = self.is_self_enc_q_shuffle
-                )
-                inner_states.append(x)
-                if layer_attn is not None and idx == alignment_layer:
-                    attn = layer_attn.float().to(x)
-        elif self.is_stacked_type in range(1,5): #layer1-layer1-layer2-layer2
-            shuffled_types = [0,(False, False, False, False), (False, True, False, False), (False,False,False, True), (False, True, False, True)]
-            shuffled_type = shuffled_types[self.is_stacked_type]
-            for idx, layer in enumerate(self.layers):
-                if incremental_state is None and not full_context_alignment:
-                    self_attn_mask = self.buffered_future_mask(x)
-                else:
-                    self_attn_mask = None
+        # stacking layers
+        for idx, layer in enumerate(self.layers):
+            if incremental_state is None and not full_context_alignment:
+                self_attn_mask = self.buffered_future_mask(x)
+            else:
+                self_attn_mask = None
 
-                for repeating_idx in range(2):
+            x, layer_attn, _ = layer(
+                x,
+                enc,
+                padding_mask,
+                incremental_state,
+                self_attn_mask=self_attn_mask,
+                self_attn_padding_mask=self_attn_padding_mask,
+                need_attn=bool((idx == alignment_layer)),
+                need_head_weights=bool((idx == alignment_layer)),
+                is_self_attn_shuffle=False,
+                is_enc_attn_shuffle=False,
+            )
+            inner_states.append(x)
+            if layer_attn is not None and idx == alignment_layer:
+                attn = layer_attn.float().to(x)
+        ###############################
+        # edited by hyojin
+        # SPS: stacking layers (twice)
+        # if self.is_shuffle True, shuffle query and key parameters in the last half layers
+        ###############################
+        for idx, layer in enumerate(self.layers):
+            if incremental_state is None and not full_context_alignment:
+                self_attn_mask = self.buffered_future_mask(x)
+            else:
+                self_attn_mask = None
+            #Ap02-1 only shuffle self-attn in 2nd layer
+            # Ap02-2 only shuffle self-attn in 1st layer
+            #is_self_attn_shuffle = True if idx == 0 else False
+            x, layer_attn, _ = layer(
+                x,
+                enc,
+                padding_mask,
+                incremental_state,
+                self_attn_mask=self_attn_mask,
+                self_attn_padding_mask=self_attn_padding_mask,
+                need_attn=bool((idx == alignment_layer)),
+                need_head_weights=bool((idx == alignment_layer)),
+                is_self_attn_shuffle=True,
+                is_enc_attn_shuffle=True,
+            )
+            inner_states.append(x)
+            if layer_attn is not None and idx == alignment_layer:
+                attn = layer_attn.float().to(x)
 
-                    #print(f"(layer idx:{idx+1} repeated num:{repeating_idx+1})")
-                    x, layer_attn, _ = layer(
-                        x,
-                        enc,
-                        padding_mask,
-                        incremental_state,
-                        self_attn_mask=self_attn_mask,
-                        self_attn_padding_mask=self_attn_padding_mask,
-                        need_attn=bool((idx == alignment_layer)),
-                        need_head_weights=bool((idx == alignment_layer)),
-                        is_self_attn_shuffle=shuffled_type[2*idx+repeating_idx],
-                        is_enc_attn_shuffle=False
-                    )
-                    inner_states.append(x)
-                    if layer_attn is not None and idx == alignment_layer:
-                        attn = layer_attn.float().to(x)
-        else: #5-6:layer1-layer2-layer2, 7-10:layer1-layer2-layer2-layer2
-
-            shuffled_types = [(False, False, False), (False, False, True),(False, False, False, False), (False, False, True, False), (False, False, False, True), (False, False, True, True)]
-            shuffled_type = shuffled_types[self.is_stacked_type-5]
-            for idx, layer in enumerate(self.layers):
-                if incremental_state is None and not full_context_alignment:
-                    self_attn_mask = self.buffered_future_mask(x)
-                else:
-                    self_attn_mask = None
-                repeat_num_per_layer = (self.is_stacked_type//7 + 1) * idx +1
-                for repeating_idx in range(repeat_num_per_layer): #only 2nd layers is shuffled
-                    #print(f"(layer idx:{idx + 1} repeated num:{repeating_idx + 1})")
-                    x, layer_attn, _ = layer(
-                        x,
-                        enc,
-                        padding_mask,
-                        incremental_state,
-                        self_attn_mask=self_attn_mask,
-                        self_attn_padding_mask=self_attn_padding_mask,
-                        need_attn=bool((idx == alignment_layer)),
-                        need_head_weights=bool((idx == alignment_layer)),
-                        is_self_attn_shuffle=shuffled_type[idx + repeating_idx],
-                        is_enc_attn_shuffle=False
-                    )
-                    inner_states.append(x)
-                    if layer_attn is not None and idx == alignment_layer:
-                        attn = layer_attn.float().to(x)
 
         if attn is not None:
             if alignment_heads is not None:
@@ -618,7 +524,7 @@ class PetTransformerEncoderBase(FairseqEncoder):
         is_shuffle = whether shuffle query and key parameters
     """
 
-    def __init__(self, cfg, dictionary, embed_tokens, return_fc=False,is_shuffle=True):
+    def __init__(self, cfg, dictionary, embed_tokens, return_fc=False):
         self.cfg = cfg
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
@@ -675,9 +581,6 @@ class PetTransformerEncoderBase(FairseqEncoder):
         )
         self.num_layers = len(self.layers)
 
-        ### edited by hyojin
-        self.is_shuffle=is_shuffle
-
         if cfg.encoder.normalize_before:
             self.layer_norm = LayerNorm(embed_dim, export=cfg.export)
         else:
@@ -704,10 +607,6 @@ class PetTransformerEncoderBase(FairseqEncoder):
         if token_embedding is None:
             token_embedding = self.embed_tokens(src_tokens)
 
-        ### hyojin
-        # print("ff")
-        # token_embedding=self.conv1d(token_embedding)
-        # ###
         x = embed = self.embed_scale * token_embedding
         if self.embed_positions is not None:
             x = embed + self.embed_positions(src_tokens)
@@ -796,10 +695,6 @@ class PetTransformerEncoderBase(FairseqEncoder):
         if has_pads:
             x = x * (1 - encoder_padding_mask.unsqueeze(-1).type_as(x))
 
-        ### hyojin
-        ### Todos: apply 1D conv to embedding output
-
-
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
@@ -833,15 +728,10 @@ class PetTransformerEncoderBase(FairseqEncoder):
                 encoder_states.append(x)
                 fc_results.append(fc_result)
 
-        ###############################
-        # edited by hyojin
-        # SPS: stacking layers (twice)
-        # if self.is_shuffle True, shuffle query and key parameters in the last half layers
-        ###############################
+        #shuffle query and key parameters in the last half layers
         for layer in self.layers:
-            #print(f"encoder sps")
             lr = layer(
-                x, encoder_padding_mask=encoder_padding_mask if has_pads else None,is_self_attn_shuffle=self.is_shuffle,
+                x, encoder_padding_mask=encoder_padding_mask if has_pads else None,is_self_attn_shuffle=True,
             )
 
             if isinstance(lr, tuple) and len(lr) == 2:
@@ -854,7 +744,7 @@ class PetTransformerEncoderBase(FairseqEncoder):
                 assert encoder_states is not None
                 encoder_states.append(x)
                 fc_results.append(fc_result)
-        ###
+
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 

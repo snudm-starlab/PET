@@ -1,5 +1,5 @@
 ################################################################################
-# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on KD)
+# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on Transformer)
 #
 # Author: Hyojin Jeon (tarahjjeon@snu.ac.kr), Seoul National University
 #         U Kang (ukang@snu.ac.kr), Seoul National University
@@ -42,7 +42,7 @@ class PetTransformerEncoderLayerBase(nn.Module):
         args (argparse.Namespace): parsed command-line arguments
     """
 
-    def __init__(self, cfg, return_fc=False, is_shuffle=True):
+    def __init__(self, cfg, return_fc=False):
         super().__init__()
         self.cfg = cfg
         self.return_fc = return_fc
@@ -77,22 +77,7 @@ class PetTransformerEncoderLayerBase(nn.Module):
         )
 
         self.final_layer_norm = LayerNorm(self.embed_dim, export=cfg.export)
-        ## whether shuffle query and key parameters
-        self.is_shuffle=is_shuffle
 
-        # % hyojin mask generation for mv pruning
-        if cfg.is_mv_pruning:
-            print(f"[[Generate Mask for mv_pruning]]")
-            self.encoder_head_mask = self._generate_encoder_mask(cfg)
-
-    # % hyojin
-    def _generate_encoder_mask(self, cfg):
-        """
-        this mask will be updated at each training step
-        """
-        print(f"$$$$$$$$$ Todos $$$$$$$$$$$")
-        encoder_mask_of_the_layer = torch.ones([self.self_attn.num_heads])
-        return encoder_mask_of_the_layer
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(
@@ -190,7 +175,8 @@ class PetTransformerEncoderLayerBase(nn.Module):
         self,
         x,
         encoder_padding_mask: Optional[Tensor],
-        attn_mask: Optional[Tensor] = None,is_self_attn_shuffle=False
+        attn_mask: Optional[Tensor] = None,
+        is_self_attn_shuffle=False
     ):
         """
         Args:
@@ -220,10 +206,6 @@ class PetTransformerEncoderLayerBase(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
-        #print("**** self attn ****")
-
-        #% update encoder mask
-        #%self.encoder_head_mask=self.compute_encoder_head_mask()
 
         x, _ = self.self_attn(
             query=x,
@@ -233,7 +215,6 @@ class PetTransformerEncoderLayerBase(nn.Module):
             need_weights=False,
             attn_mask=attn_mask,
             is_self_attn_shuffle=is_self_attn_shuffle,
-            #% encoder_head_mask = self.encoder_head_mask
         )
         #print("**** dropout ****")
         x = self.dropout_module(x)
@@ -294,8 +275,7 @@ class PetTransformerDecoderLayerBase(nn.Module):
     """
 
     def __init__(
-        self, cfg, no_encoder_attn=False, add_bias_kv=False, add_zero_attn=False, is_sharing=False, is_self_attn_shuffle=False,
-        is_enc_attn_shuffle=False
+        self, cfg, no_encoder_attn=False, add_bias_kv=False, add_zero_attn=False
     ):
         super().__init__()
         self.embed_dim = cfg.decoder.embed_dim
@@ -307,9 +287,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
 
         self.cross_self_attention = cfg.cross_self_attention
 
-        ###revised by hyojin ########todos: True condition
-        if is_sharing:
-            print("generate shared q")
         pre_q_proj=nn.Linear(self.embed_dim, self.embed_dim, bias=True) if is_sharing else None
 
         self.self_attn = self.build_self_attention(
@@ -386,9 +363,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
 
         self.onnx_trace = False
 
-        self.is_self_attn_shuffle = is_self_attn_shuffle
-        self.is_enc_attn_shuffle = is_enc_attn_shuffle
-
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
@@ -398,7 +372,7 @@ class PetTransformerDecoderLayerBase(nn.Module):
     def build_self_attention(
         self, embed_dim, cfg, add_bias_kv=False, add_zero_attn=False, q_proj=None
     ):
-        return MultiheadAttention_SPS(
+        return PetMultiheadAttention(
             embed_dim,
             cfg.decoder.attention_heads,
             dropout=cfg.attention_dropout,
@@ -412,7 +386,7 @@ class PetTransformerDecoderLayerBase(nn.Module):
         )
     ### revised: cross attention - sps 적용 안 함
     def build_encoder_attention(self, embed_dim, cfg, q_proj=None):
-        return MultiheadAttention_SPS(
+        return PetMultiheadAttention(
             embed_dim,
             cfg.decoder.attention_heads,
             kdim=cfg.encoder.embed_dim,
@@ -499,8 +473,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
         need_head_weights: bool = False,
         is_self_attn_shuffle=False,
         is_enc_attn_shuffle=False,
-        is_dec_kv_shuffle = False,
-        is_self_enc_shuffled_q = False
     ):
         """
         Args:
@@ -567,8 +539,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
             need_weights=False,
             attn_mask=self_attn_mask,
             is_self_attn_shuffle=is_self_attn_shuffle,
-            is_dec_kv_shuffle=is_dec_kv_shuffle,
-            self_enc_shuffled_q = None if is_self_enc_shuffled_q == False else self.encoder_attn.q_proj
         )
         if self.c_attn is not None:
             tgt_len, bsz = x.size(0), x.size(1)
@@ -596,7 +566,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
                     saved_state["prev_key_padding_mask"] = prev_attn_state[2]
                 assert incremental_state is not None
                 self.encoder_attn._set_input_buffer(incremental_state, saved_state)
-            #print(f"layer base 2: {is_self_attn_shuffle}//{is_enc_attn_shuffle}")
             x, attn = self.encoder_attn(
                 query=x,
                 key=encoder_out,
@@ -608,8 +577,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
                 need_head_weights=need_head_weights,
                 is_self_attn_shuffle=is_self_attn_shuffle,
                 is_enc_attn_shuffle=is_enc_attn_shuffle,
-                is_dec_kv_shuffle=is_dec_kv_shuffle,
-                self_enc_shuffled_q = None if is_self_enc_shuffled_q == False else self.self_attn.q_proj
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)
