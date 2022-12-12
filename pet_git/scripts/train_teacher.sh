@@ -41,4 +41,4 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train \
     --no-epoch-checkpoints --keep-best-checkpoints 1 \
     --encoder-embed-dim 512 --encoder-ffn-embed-dim 1024 \
     --decoder-embed-dim 512 --decoder-ffn-embed-dim 1024 \
-    --decoder-output-dim 512 --decoder-input-dim 512
+    --decoder-output-dim 512
