@@ -394,18 +394,14 @@ class PetTranslationTask(FairseqTask):
         return model
 
     def build_teacher_model(self, cfg, from_checkpoint=True):
-        model = super().build_model(cfg, from_checkpoint)
-        if self.cfg.eval_bleu:
-            detok_args = json.loads(self.cfg.eval_bleu_detok_args)
-            self.tokenizer = encoders.build_tokenizer(
-                Namespace(tokenizer=self.cfg.eval_bleu_detok, **detok_args)
-            )
-
-            gen_args = json.loads(self.cfg.eval_bleu_args)
-            self.sequence_generator = self.build_generator(
-                [model], Namespace(**gen_args)
-            )
-        return model
+        """
+        Build teacher model for patient KD
+        :param cfg: configuration of the teacher model
+        :param from_checkpoint: whether to use saved checkpoint
+        :return: teacher model
+        """
+        teacher_model = super().build_model(cfg, from_checkpoint)
+        return teacher_model
 
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
