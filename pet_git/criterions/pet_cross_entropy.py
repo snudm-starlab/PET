@@ -1,5 +1,5 @@
 ################################################################################
-# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on KD)
+# Starlab Transformer Compression with PET (Parameter-Efficient Knowledge Distillation on Transformer)
 #
 # Author: Hyojin Jeon (tarahjjeon@snu.ac.kr), Seoul National University
 #         U Kang (ukang@snu.ac.kr), Seoul National University
