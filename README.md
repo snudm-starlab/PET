@@ -37,12 +37,8 @@ PET
   │     │    ├── pet_multihead_attention.py: multihead attention for PET
   │     │    └── pet_transformer_layer.py : layers of encoder and decoder of PET
   │     │    
-  │     ├── train.py : codes for training a new model 
-  │     ├── trainer.py : codes for managing training process 
-  │     ├── generate.py : Translate pre-processed data with a trained model
-  │     ├── sequence_generator.py : Codes for generating sequences
-  │     ├── checkpoint_utils.py : Codes for saving and loading checkpoints
-  │     └── flops_counter.py: Codes for computing FLOPs of the model
+  │     ├── pet_train.py : codes for training a new model 
+  │     └── pet_trainer.py : codes for managing training process 
   │     
   │     
   ├──  scripts
