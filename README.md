@@ -28,7 +28,7 @@ Here's an overview of our codes.
 ``` Unicode
 PET
   │
-  ├──  (pet_git)    
+  ├──  src   
   │     ├── criterions
   │     │    └── pet_cross_entropy.py: customized criterion for PET
   │     ├── models
