@@ -89,7 +89,10 @@ class PetMultiheadAttention(nn.Module):
         )if q_proj is None else quant_noise(
             q_proj, q_noise, qn_block_size
         )
-
+        if q_proj is None:
+            print("q_proj is None")
+        else:
+            print("NOENEONEO:")
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
@@ -106,13 +109,10 @@ class PetMultiheadAttention(nn.Module):
 
         self.onnx_trace = False
         self.skip_embed_dim_check = False
-        ### hyojin
         self.skip_embed_dim_check = True
         self.is_shuffle=is_shuffle
         self.attn_head_importance_score = torch.zeros(2,self.num_heads,self.head_dim, embed_dim) #2: stacked layer
-        #shuffled:2, q,k,v => head_dim, embed_dim
 
-    #% hyojin
     def _update_attn_mask(self, num_heads_to_keep):
         """ before forward (F.multi_head_attention) update attn_mask
             let self.attn_head_mask updated and given to F.multi_head_attention as attn_mask
@@ -139,13 +139,10 @@ class PetMultiheadAttention(nn.Module):
         print(f"Compute_importance_score --> whether shuffled/stacked layer:{self.is_shuffle}")
         stacked_layer_idx = 1 if self.is_shuffle else 0
         importance_scores_of_layer_heads = self.attn_head_importance_score[stacked_layer_idx]
-        #% importance_score: self.num_heads, self.head_dim, embed_dim
         for i in range(self.num_heads):
             start_idx = i * self.head_dim
             end_idx = (i+1) * self.head_dim
-            #% importance_score = q,k,v projection matrix importance score of time t
-            #% importance_score (head_dim, dim) 어차피 더하는 거라 같이 해도 상관 없음
-            #% heads_importance_score (4, head_dim, dim)
+
             importance_scores_of_layer_heads[i] = -torch.mm(
                 self.q_proj.grad[start_idx:end_idx], proj.weight[start_idx:end_idx]
             )
@@ -153,9 +150,7 @@ class PetMultiheadAttention(nn.Module):
                 importance_scores_of_layer_heads[i] -= torch.mm(
                     proj.grad[start_idx:end_idx],proj.weight[start_idx:end_idx]
                     )
-        #% finish updating importance_score of each head
 
-        #% sorting each heads
         sorted_importance_scores_of_layer_heads = sorted(
             range(self.num_heads), key=lambda k: importance_scores_of_layer_heads[k], reverse=True
         )
@@ -186,15 +181,11 @@ class PetMultiheadAttention(nn.Module):
             nn.init.xavier_normal_(self.bias_k)
         if self.bias_v is not None:
             nn.init.xavier_normal_(self.bias_v)
-    # def _get_fc_rank(self,remove_num=2):
-    #     pass
-    # def _prune_fc_layer(self,remove_index=2):
-    #     pass
+
     def _get_reserve_head_index(self, num_heads_to_keep: int):
         k_proj_heads_norm = []
         q_proj_heads_norm = []
         v_proj_heads_norm = []
-        #print(f"num_heads:{self.num_heads}// head_dim:{self.head_dim}")
         for i in range(self.num_heads):
             start_idx = i * self.head_dim
             end_idx = (i + 1) * self.head_dim
@@ -243,7 +234,6 @@ class PetMultiheadAttention(nn.Module):
             start = sorted_head_index[i] * self.head_dim
             end = (sorted_head_index[i] + 1) * self.head_dim
             reserve_head_index.append((start, end))
-        #print(f"sorted head index: {sorted_head_index}")
         return reserve_head_index
 
     def _adaptive_prune_heads(self, reserve_head_index: List[Tuple[int, int]]):
@@ -390,10 +380,7 @@ class PetMultiheadAttention(nn.Module):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
-        is_self_attn_shuffle = False, ## 0712 revised
-        is_enc_attn_shuffle = False,
-        is_dec_kv_shuffle = False,
-        self_enc_shuffled_q=None
+        is_self_attn_shuffle = False
 
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
@@ -448,9 +435,8 @@ class PetMultiheadAttention(nn.Module):
             and not self.skip_embed_dim_check
         ):
             assert key is not None and value is not None
-            #print("pytorch MHA operation")
-            ### edited by hyojin
-            if is_self_attn_shuffle == True: ### SPS (shuffle query and key)
+
+            if is_self_attn_shuffle == True: 
                 return F.multi_head_attention_forward(
                     query,
                     key,
@@ -495,7 +481,7 @@ class PetMultiheadAttention(nn.Module):
                     need_weights,
                     attn_mask,
                     use_separate_proj_weight=True,
-                    q_proj_weight=self.q_proj.weight if self_enc_shuffled_q == None else self_enc_shuffled_q.weight,
+                    q_proj_weight=self.q_proj.weight,
                     k_proj_weight=self.k_proj.weight,
                     v_proj_weight=self.v_proj.weight,
                 )
@@ -515,26 +501,16 @@ class PetMultiheadAttention(nn.Module):
         #print("Custom MHA operation")
 
         if self.self_attention:
-            #print(f"-- self_attn: shuffle {is_self_attn_shuffle} ")
-            if is_dec_kv_shuffle == False and  self_enc_shuffled_q==None:
-                q = self.q_proj(query) if is_self_attn_shuffle == False else self.k_proj(query)
-                k = self.k_proj(query) if is_self_attn_shuffle == False else self.q_proj(query)
-                v = self.v_proj(query)
-            elif  is_dec_kv_shuffle == False and self_enc_shuffled_q != None:
-                q= self_enc_shuffled_q(query)
-                k = self.k_proj(query)
+            if is_self_attn_shuffle: 
+                q = self.k_proj(query) 
+                k = self.q_proj(query) 
                 v = self.v_proj(query)
             else:
                 q = self.q_proj(query)
                 k = self.v_proj(query)
                 v = self.k_proj(query)
         elif self.encoder_decoder_attention:
-            #print(f"enc_attn:shuffle{self_enc_shuffled_q!=None}")
-            # encoder-decoder attention
-            if self_enc_shuffled_q == None:
-                q = self.q_proj(query) if is_enc_attn_shuffle == False else self.k_proj(query)
-            else:
-                q = self_enc_shuffled_q(query)
+            q = self.q_proj(query) 
             if key is None:
                 assert value is None
                 k = v = None
@@ -548,7 +524,7 @@ class PetMultiheadAttention(nn.Module):
                         key_padding_mask = key_padding_mask.view(
                             -1, self.beam_size, key_padding_mask.size(1)
                         )[:, 0, :]
-                k = self.k_proj(key) if is_enc_attn_shuffle == False else self.q_proj(key)
+                k = self.k_proj(key) 
                 v = self.v_proj(key)
 
         else:
@@ -614,7 +590,7 @@ class PetMultiheadAttention(nn.Module):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = MultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = PetMultiheadAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=kv_bsz,

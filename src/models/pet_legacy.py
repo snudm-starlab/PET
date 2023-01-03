@@ -179,14 +179,3 @@ def pet_iwslt_de_en(args):
     args.decoder_layers = getattr(args, "decoder_layers", 2)
     base_architecture(args)
 
-@register_model_architecture("transformer", "transformer_iwslt_de_en_tiny_teacher")
-def transformer_iwslt_de_en_tiny_teacher(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 320)  # 512 -> 128
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 640)  # 1024 -> 256
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)
-    args.encoder_layers = getattr(args, "encoder_layers", 6)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 240)  # 512 -> 256
-    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 480)  # 1024 -> 512
-    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
-    args.decoder_layers = getattr(args, "decoder_layers", 6)
-    base_architecture(args)

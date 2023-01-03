@@ -25,7 +25,7 @@ from omegaconf import II
 from sacrebleu.metrics import BLEU
 bleu = BLEU()
 
-
+import torch
 import numpy as np
 from fairseq import metrics, utils
 from fairseq.data import (
@@ -42,7 +42,7 @@ from fairseq.data import (
 from fairseq.data.indexed_dataset import get_available_dataset_impl
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
-
+from fairseq.optim.amp_optimizer import AMPOptimizer
 
 EVAL_BLEU_ORDER = 4
 
@@ -404,7 +404,9 @@ class PetTranslationTask(FairseqTask):
         return teacher_model
 
     def valid_step(self, sample, model, criterion):
-        loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
+        model.eval()
+        with torch.no_grad():
+            loss, sample_size, logging_output = criterion(model, None, sample)
         if self.cfg.eval_bleu:
             bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
             logging_output["_bleu_sys_len"] = bleu.sys_len

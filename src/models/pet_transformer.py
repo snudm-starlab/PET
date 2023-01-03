@@ -14,13 +14,13 @@
 # [GitHub Repository]: https://github.com/facebookresearch/fairseq
 ################################################################################
 import math
-from typing import Dict, List, Optional
+from typing import Any,Dict, List, Optional
 
 import torch
 import torch.nn as nn
 from fairseq import utils
 from fairseq.distributed import fsdp_wrap
-from fairseq.models import FairseqEncoder
+from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
 from fairseq.modules import (
     FairseqDropout,
     LayerDropModuleList,
@@ -28,7 +28,7 @@ from fairseq.modules import (
     PositionalEmbedding,
     SinusoidalPositionalEmbedding,
 )
-from fairseq.modules import pet_transformer_layer
+from ..modules import pet_transformer_layer
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
@@ -36,6 +36,11 @@ from fairseq.models.transformer import (
     TransformerConfig,
 )
 
+def module_name_fordropout(module_name:str) -> str:
+    if module_name == "PetTransformerDecoderBase":
+        return "PetTransformerDecoder"
+    else:
+        return module_name
 
 class PetTransformerDecoderBase(FairseqIncrementalDecoder):
     """
@@ -177,7 +182,7 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
             )
 
     def build_decoder_layer(self, cfg, no_encoder_attn=False):
-        layer = pet_transformer_layer.PetTransformerDecoderLayer(cfg, no_encoder_attn)                                                      )
+        layer = pet_transformer_layer.PetTransformerDecoderLayerBase(cfg, no_encoder_attn)
         checkpoint = cfg.checkpoint_activations
         if checkpoint:
             offload_to_cpu = cfg.offload_activations
@@ -352,7 +357,6 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
                 is_self_attn_shuffle=False,
-                is_enc_attn_shuffle=False,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
@@ -379,8 +383,7 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
-                is_self_attn_shuffle=True,
-                is_enc_attn_shuffle=True,
+                is_self_attn_shuffle=False,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
@@ -587,7 +590,7 @@ class PetTransformerEncoderBase(FairseqEncoder):
             self.layer_norm = None
 
     def build_encoder_layer(self, cfg):
-        layer = pet_transformer_layer.PetTransformerEncoderLayer(
+        layer = pet_transformer_layer.PetTransformerEncoderLayerBase(
             cfg, return_fc=self.return_fc
         )
         checkpoint = cfg.checkpoint_activations

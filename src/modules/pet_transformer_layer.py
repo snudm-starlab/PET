@@ -217,21 +217,16 @@ class PetTransformerEncoderLayerBase(nn.Module):
             attn_mask=attn_mask,
             is_self_attn_shuffle=is_self_attn_shuffle,
         )
-        #print("**** dropout ****")
         x = self.dropout_module(x)
-        #print("**** residual ****")
         x = self.residual_connection(x, residual)
-        #print("**** normalize ****")
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
 
         residual = x
         if self.normalize_before:
             x = self.final_layer_norm(x)
-        #print("**** fc1 ****")
         x = self.activation_fn(self.fc1(x))
         x = self.activation_dropout_module(x)
-        #print("**** fc2 ****")
         x = self.fc2(x)
 
         fc_result = x
@@ -287,8 +282,7 @@ class PetTransformerDecoderLayerBase(nn.Module):
         self.quant_noise_block_size = cfg.quant_noise.pq_block_size
 
         self.cross_self_attention = cfg.cross_self_attention
-
-        pre_q_proj=nn.Linear(self.embed_dim, self.embed_dim, bias=True) if is_sharing else None
+        pre_q_proj=nn.Linear(self.embed_dim, self.embed_dim, bias=True) 
 
         self.self_attn = self.build_self_attention(
             self.embed_dim,
@@ -382,10 +376,9 @@ class PetTransformerDecoderLayerBase(nn.Module):
             self_attention=not cfg.cross_self_attention,
             q_noise=self.quant_noise,
             qn_block_size=self.quant_noise_block_size,
-            is_shuffle=True,
+            is_shuffle=False,
             q_proj=q_proj
         )
-    ### revised: cross attention - sps 적용 안 함
     def build_encoder_attention(self, embed_dim, cfg, q_proj=None):
         return PetMultiheadAttention(
             embed_dim,
@@ -396,7 +389,7 @@ class PetTransformerDecoderLayerBase(nn.Module):
             encoder_decoder_attention=True,
             q_noise=self.quant_noise,
             qn_block_size=self.quant_noise_block_size,
-            is_shuffle=True,
+            is_shuffle=False,
             q_proj=q_proj
         )
 
@@ -529,7 +522,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
         else:
             y = x
 
-        #print(f"layer base: {is_self_attn_shuffle}")
 
         x, attn = self.self_attn(
             query=x,
@@ -577,7 +569,6 @@ class PetTransformerDecoderLayerBase(nn.Module):
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
                 is_self_attn_shuffle=is_self_attn_shuffle,
-                is_enc_attn_shuffle=is_enc_attn_shuffle,
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)
