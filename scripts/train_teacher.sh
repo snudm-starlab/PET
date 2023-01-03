@@ -1,9 +1,10 @@
 #!/bin/bash
-checkpoint_dir=checkpoints
+checkpoint_dir=../checkpoints
+mkdir -p $checkpoint_dir
 
 echo "Train Baseline Model"
 CUDA_VISIBLE_DEVICES=0 fairseq-train \
-    data-bin/iwslt14.tokenized.de-en \
+    ../data-bin/iwslt14.tokenized.de-en \
     --arch transformer_iwslt_de_en --share-decoder-input-output-embed \
     --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
     --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 \
@@ -17,12 +18,12 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train \
     --eval-bleu-print-samples \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir $checkpoint_dir/base_teacher \
-    --patience 10 --max-epoch 60 --source-lang de --target-lang en \
+    --patience 10 --max-epoch 100 --source-lang de --target-lang en \
     --no-epoch-checkpoints --keep-best-checkpoints 1
 
 echo "Train Tiny Teacher Model"
 CUDA_VISIBLE_DEVICES=0 fairseq-train \
-    data-bin/iwslt14.tokenized.de-en \
+    ../data-bin/iwslt14.tokenized.de-en \
     --arch transformer_iwslt_de_en --share-decoder-input-output-embed \
     --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
     --lr 5e-4 --lr-scheduler inverse_sqrt --warmup-updates 4000 \
@@ -36,8 +37,8 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train \
     --eval-bleu-print-samples \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir $checkpoint_dir/tiny_teacher \
-    --patience 10 --max-epoch 60 --source-lang de --target-lang en \
+    --patience 10 --max-epoch 100 --source-lang de --target-lang en \
     --no-epoch-checkpoints --keep-best-checkpoints 1 \
-    --encoder-embed-dim 512 --encoder-ffn-embed-dim 1024 \
-    --decoder-embed-dim 512 --decoder-ffn-embed-dim 1024 \
-    --decoder-output-dim 512 --decoder-input-dim 512
+    --encoder-embed-dim 320 --encoder-ffn-embed-dim 640 \
+    --decoder-embed-dim 240 --decoder-ffn-embed-dim 480 \
+    --decoder-output-dim 240
