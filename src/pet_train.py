@@ -105,7 +105,7 @@ def main(cfg: FairseqConfig) -> None:
         ### set teacher model's config
         teacher_cfg = copy.deepcopy(cfg)
 
-        if str(cfg.criterion._name).lower().startswith("ptp"):
+        if str(cfg.criterion._name).lower()=="pet_warm_up_criterion":
             teacher_dir = "checkpoints/base_teacher"
             teacher_cfg.model.encoder_embed_dim = 512
             teacher_cfg.model.decoder_embed_dim = 512
@@ -113,10 +113,10 @@ def main(cfg: FairseqConfig) -> None:
             teacher_cfg.model.decoder_ffn_embed_dim = 1024
             teacher_cfg.model.decoder_output_dim = 512
             teacher_cfg.model.decoder_input_dim = 512
-            teacher_cfg.model._arch = 'transformer_iwslt_de_en'
         else:
             teacher_dir = "checkpoints/tiny_teacher"
-            teacher_cfg.model._arch='transformer_iwslt_de_en_tiny_teacher'
+        teacher_cfg.model._name = 'transformer_iwslt_de_en'
+        teacher_cfg.model._arch = 'transformer_iwslt_de_en'
         teacher_cfg.model.encoder_layers = 6
         teacher_cfg.model.decoder_layers = 6
         ### build teacher model
