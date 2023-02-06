@@ -118,7 +118,7 @@ CUDA_VISIBLE_DEVICES=0 python ../src/train.py \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir ../checkpoints/base \
 ```
-This code is also saved in scripts/iwslt_pet.sh
+This code is also saved in scripts/train_pet.sh
 
 ## Reference
 * FAIRSEQ: https://github.com/facebookresearch/fairseq
