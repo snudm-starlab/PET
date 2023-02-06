@@ -27,9 +27,9 @@ PET
   │     ├── criterions
   │     │    └── pet_cross_entropy.py: customized criterion for PET
   │     ├── models
-  │     │    ├── pet_legacy.py: the model configuration of the PET models
-  │     │    ├── pet_transformer_base.py: the implementation of the base architecture of the PET models  
-  │     │    └── pet_transformer.py: the implementation of the PET models
+  │     │    ├── pet_legacy.py: the model configuration of PET
+  │     │    ├── pet_transformer_base.py: the implementation of the base architecture of PET   
+  │     │    └── pet_transformer.py: the implementation of PET 
   │     ├── modules
   │     │    ├── pet_multihead_attention.py: multihead attention for PET
   │     │    └── pet_transformer_layer.py : layers of encoder and decoder of PET
