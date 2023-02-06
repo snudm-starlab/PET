@@ -41,6 +41,7 @@ class PETLabelSmoothedCrossEntropyCriterionConfig(FairseqDataclass):
 
 def distillation_loss_kd_no_torch(st_output, t_output, T=10, reduction_kd='batchmean'):
     """
+     customized function to compute the distillation loss
      1. Goal: Learn logits from the last layer
      2. st_output, t_output -(tuple)
         st_output[0] - (Tensor): output from each decoder ([batch, tgt_len, embed_dim])
@@ -64,6 +65,7 @@ def distillation_loss_kd_no_torch(st_output, t_output, T=10, reduction_kd='batch
 def patience_loss_kd_no_torch(st_output,st_output_en, t_output,t_output_en, normalized_patience=False, distill_type="skip"):
 
     """
+    customized fuction to compute the patience loss
     distill_type ="skip" / "last"
     Given teacher: {1,2,3,4,5,6}, student: {1,2,3,4}
     if distill_type == "skip":
@@ -103,7 +105,7 @@ def patience_loss_kd_no_torch(st_output,st_output_en, t_output,t_output_en, norm
     return (encoder_pt_loss + decoder_pt_loss) * 0.5
 
 def distillation_loss_kd(st_output, t_output, T=10,reduction_kd='batchmean'):
-
+    "compute distillation loss"
     if t_output is not None:
         d_loss=nn.KLDivLoss(reduction=reduction_kd)(  F.log_softmax(st_output[0]/T, dim=1),
                                 F.softmax(t_output[0]/T, dim=1)
@@ -113,6 +115,7 @@ def distillation_loss_kd(st_output, t_output, T=10,reduction_kd='batchmean'):
     return d_loss
 
 def patience_loss_kd(st_output,st_output_en, t_output,t_output_en, normalized_patience=False):
+    "compute patience loss"
 
     st_attn=st_output[1]["inner_states"] #attn list from extra states
 
@@ -138,7 +141,7 @@ def patience_loss_kd(st_output,st_output_en, t_output,t_output_en, normalized_pa
     return (F.mse_loss(t_patience.float(), st_patience.float())+F.mse_loss(t_attn.float(),s_attn.float()))/2
 
 def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
-
+    "compute the label smoothed nll loss"
     if target.dim() == lprobs.dim() - 1:
         target = target.unsqueeze(-1)
     nll_loss = -lprobs.gather(dim=-1, index=target)
@@ -161,6 +164,7 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
     "pet_warm_up_criterion", dataclass=PETLabelSmoothedCrossEntropyCriterionConfig
 )
 class PTPCrossEntropyCriterionUpdate(FairseqCriterion):
+    "custom loss for warming up the PET model"
     def __init__(
             self,
             task,
@@ -420,6 +424,7 @@ class PTPCrossEntropyCriterionUpdate(FairseqCriterion):
     "pet_cross_entropy_adjust", dataclass=PETLabelSmoothedCrossEntropyCriterionConfig
 )
 class PTPCrossEntropyCriterion_adjust(FairseqCriterion):
+    "variation of pet_warm_up_criterion"
     def __init__(
         self,
         task,
@@ -695,6 +700,7 @@ class PTPCrossEntropyCriterion_adjust(FairseqCriterion):
     "pet_kd_criterion", dataclass=PETLabelSmoothedCrossEntropyCriterionConfig
 )
 class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
+    "loss for train the pet model using vanilla knowledge distillation"
     def __init__(
         self,
         task,
@@ -844,6 +850,7 @@ class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
     "pet_pkd_criterion", dataclass=PETLabelSmoothedCrossEntropyCriterionConfig
 )
 class LabelSmoothedCrossEntropyCriterion_pkd_wo_torch(FairseqCriterion):
+    "loss for train the pet model using the patient knowledge distillation using the customized functions"
     def __init__(
         self,
         task,
