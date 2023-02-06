@@ -114,12 +114,12 @@ def distillation_loss_kd(st_output, t_output, T=10,reduction_kd='batchmean'):
 
 def patience_loss_kd(st_output,st_output_en, t_output,t_output_en, normalized_patience=False):
 
-    st_attn=st_output[1]["inner_states"] #x, extra 중 extra에서 attn list
+    st_attn=st_output[1]["inner_states"] #attn list from extra states
 
-    st_patience_en=st_output_en["encoder_states"] #encoder, states 들의 list -> [T,B,C]
+    st_patience_en=st_output_en["encoder_states"] #list of the encoder states [T,B,C]
     t_attn=t_output[1]["inner_states"]
 
-    t_patience_en=t_output_en["encoder_states"]  #decoder
+    t_patience_en=t_output_en["encoder_states"]  
 
     st_patience=torch.stack(st_patience_en[:-1])[:,:,-1,:] #1
     t_patience=torch.stack(t_patience_en[len(t_patience_en[:-1])-len(st_patience_en[:-1]):-1])[:,:,-1,:] #6 pkd_last
@@ -443,7 +443,6 @@ class PTPCrossEntropyCriterion_adjust(FairseqCriterion):
         self.eps = label_smoothing
         self.ignore_prefix_size = ignore_prefix_size
         self.report_accuracy = report_accuracy
-        ### edited by hyojin
         self.alpha=alpha
         self.beta=beta
         self.T=T
@@ -638,6 +637,161 @@ class PTPCrossEntropyCriterion_adjust(FairseqCriterion):
         return loss, sample_size, logging_output
 
 
+
+    def compute_accuracy(self, model, net_output, sample):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+        mask = target.ne(self.padding_idx)
+        n_correct = torch.sum(
+            lprobs.argmax(1).masked_select(mask).eq(target.masked_select(mask))
+        )
+        total = torch.sum(mask)
+        return n_correct, total
+
+    @classmethod
+    def reduce_metrics(cls, logging_outputs) -> None:
+        """Aggregate logging outputs from data parallel training."""
+        loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
+        nll_loss_sum = sum(log.get("nll_loss", 0) for log in logging_outputs)
+        ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
+        sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
+
+        metrics.log_scalar(
+            "loss", loss_sum / sample_size / math.log(2), sample_size, round=3
+        )
+        metrics.log_scalar(
+            "nll_loss", nll_loss_sum / ntokens / math.log(2), ntokens, round=3
+        )
+        metrics.log_derived(
+            "ppl", lambda meters: utils.get_perplexity(meters["nll_loss"].avg)
+        )
+
+        total = utils.item(sum(log.get("total", 0) for log in logging_outputs))
+        if total > 0:
+            metrics.log_scalar("total", total)
+            n_correct = utils.item(
+                sum(log.get("n_correct", 0) for log in logging_outputs)
+            )
+            metrics.log_scalar("n_correct", n_correct)
+            metrics.log_derived(
+                "accuracy",
+                lambda meters: round(
+                    meters["n_correct"].sum * 100.0 / meters["total"].sum, 3
+                )
+                if meters["total"].sum > 0
+                else float("nan"),
+            )
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        """
+        Whether the logging outputs returned by `forward` can be summed
+        across workers prior to calling `reduce_metrics`. Setting this
+        to True will improves distributed training speed.
+        """
+        return True
+
+
+@register_criterion(
+    "pet_kd_criterion", dataclass=PETLabelSmoothedCrossEntropyCriterionConfig
+)
+class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
+    def __init__(
+        self,
+        task,
+        sentence_avg,
+        label_smoothing,
+
+        alpha=0.05,
+        beta=100,
+        T=10,
+
+        ignore_prefix_size=0,
+        report_accuracy=False
+
+    ):
+        super().__init__(task)
+        self.sentence_avg = sentence_avg
+        self.eps = label_smoothing
+        self.ignore_prefix_size = ignore_prefix_size
+        self.report_accuracy = report_accuracy
+
+        self.alpha=alpha
+        self.beta=beta
+        self.T=T
+
+    def forward(self, model, teacher_model, sample, reduce=True):
+        """Compute the loss for the given sample.
+
+        Returns a tuple with three elements:
+        1) the loss
+        2) the sample size, which is used as the denominator for the gradient
+        3) logging outputs to display while training
+        """
+
+        net_output,_= model(**sample["net_input"])
+        if teacher_model is not None:
+            with torch.no_grad():
+                teacher_net_output,_=teacher_model(**sample["net_input"])
+
+            loss, nll_loss = self.compute_loss_kd(model, net_output, teacher_net_output, sample, reduce=reduce)
+        else:
+            loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        #loss, loss_1, loss_2, nll_loss, nll_loss_1, nll_loss_2 = self.compute_loss_kd(model, net_output, sample, reduce=reduce)
+        sample_size = (
+            sample["target"].size(0) if self.sentence_avg else sample["ntokens"]
+        )
+        logging_output = {
+            "loss": loss.data,
+            "nll_loss": nll_loss.data,
+            "ntokens": sample["ntokens"],
+            "nsentences": sample["target"].size(0),
+            "sample_size": sample_size,
+        }
+        if self.report_accuracy:
+            n_correct, total = self.compute_accuracy(model, net_output, sample)
+            logging_output["n_correct"] = utils.item(n_correct.data)
+            logging_output["total"] = utils.item(total.data)
+        return loss, sample_size, logging_output
+        #return loss, loss_1, loss_2, sample_size, logging_output
+
+    def get_lprobs_and_target_kd(self, model, net_output, sample):
+        #lprobs = model.get_normalized_probs(net_output, log_probs=True)
+        #print(f"##########model:{model}")
+        lprobs = model.get_normalized_probs_kd(net_output, log_probs=True) #output에 log_softmax 취한 값
+        target = model.get_targets(sample, net_output)
+        if self.ignore_prefix_size > 0:
+            # lprobs: B x T x C
+            lprobs = lprobs[:, self.ignore_prefix_size :, :].contiguous()
+            target = target[:, self.ignore_prefix_size :].contiguous()
+        return lprobs.view(-1, lprobs.size(-1)), target.view(-1)
+
+    def compute_loss(self, model, net_output, sample, reduce=True):
+        lprobs, target = self.get_lprobs_and_target_kd(model, net_output, sample)
+        loss, nll_loss = label_smoothed_nll_loss(
+            lprobs,
+            target,
+            self.eps,
+            ignore_index=self.padding_idx,
+            reduce=reduce,
+        )
+
+        return loss, nll_loss
+
+    def compute_loss_kd(self, model, net_output, teacher_net_output, sample, reduce=True):
+        lprobs, target = self.get_lprobs_and_target_kd(model, net_output, sample)
+        loss, nll_loss = label_smoothed_nll_loss(
+            lprobs,
+            target,
+            self.eps,
+            ignore_index=self.padding_idx,
+            reduce=reduce,
+        )
+
+        d_loss = distillation_loss_kd(net_output, teacher_net_output, self.T)
+        #p_loss = patience_loss_kd()
+        p_loss=0.0
+        loss= loss*(1-self.alpha)+d_loss*(self.alpha)+p_loss*(self.beta)
+        return loss, nll_loss #이건 CE
 
     def compute_accuracy(self, model, net_output, sample):
         lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
