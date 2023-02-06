@@ -94,7 +94,6 @@ Followings are key arguments:
     * arch: architecture type
     * is-SPS: whether use PET or not
     * save-dir: path for saving checkpoints
-    * pretrained-model: path for pre-trained model to be pruned
     
 
 * First, we begin with training a Transformer model
