@@ -736,7 +736,6 @@ class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
             loss, nll_loss = self.compute_loss_kd(model, net_output, teacher_net_output, sample, reduce=reduce)
         else:
             loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
-        #loss, loss_1, loss_2, nll_loss, nll_loss_1, nll_loss_2 = self.compute_loss_kd(model, net_output, sample, reduce=reduce)
         sample_size = (
             sample["target"].size(0) if self.sentence_avg else sample["ntokens"]
         )
@@ -752,11 +751,8 @@ class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
             logging_output["n_correct"] = utils.item(n_correct.data)
             logging_output["total"] = utils.item(total.data)
         return loss, sample_size, logging_output
-        #return loss, loss_1, loss_2, sample_size, logging_output
 
     def get_lprobs_and_target_kd(self, model, net_output, sample):
-        #lprobs = model.get_normalized_probs(net_output, log_probs=True)
-        #print(f"##########model:{model}")
         lprobs = model.get_normalized_probs_kd(net_output, log_probs=True) #output에 log_softmax 취한 값
         target = model.get_targets(sample, net_output)
         if self.ignore_prefix_size > 0:
@@ -788,7 +784,6 @@ class LabelSmoothedCrossEntropyCriterion_kd(FairseqCriterion):
         )
 
         d_loss = distillation_loss_kd(net_output, teacher_net_output, self.T)
-        #p_loss = patience_loss_kd()
         p_loss=0.0
         loss= loss*(1-self.alpha)+d_loss*(self.alpha)+p_loss*(self.beta)
         return loss, nll_loss #이건 CE
