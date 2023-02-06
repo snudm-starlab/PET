@@ -92,7 +92,6 @@ make
 * We provide scripts for training and testing.
 Followings are key arguments:
     * arch: architecture type
-    * compression-rate: target compreesion rate
     * is-SPS: whether use PET or not
     * save-dir: path for saving checkpoints
     * pretrained-model: path for pre-trained model to be pruned
@@ -118,7 +117,7 @@ CUDA_VISIBLE_DEVICES=0 python ../src/train.py \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir ../checkpoints/base \
 ```
-This code is also saved in scripts/train_pet.sh
+This code is also saved in scripts/train_teacher.sh
 
 ## Reference
 * FAIRSEQ: https://github.com/facebookresearch/fairseq
