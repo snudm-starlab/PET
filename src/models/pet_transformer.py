@@ -121,7 +121,6 @@ class PetTransformerDecoderBase(FairseqIncrementalDecoder):
             self.layers = LayerDropModuleList(p=self.decoder_layerdrop)
         else:
             self.layers = nn.ModuleList([])
-        ### layer 이어 붙이기
 
 
         self.layers.extend(
@@ -543,11 +542,6 @@ class PetTransformerEncoderBase(FairseqEncoder):
         self.max_source_positions = cfg.max_source_positions
 
         self.embed_tokens = embed_tokens
-        # print(f"#### embed tokens:{embed_dim} // ")
-        # ### embed conv
-        # self.conv1d = torch.nn.Conv1d(128, 512, kernel_size=3, padding=194)
-        # embed_dim=512
-        # ###
         self.embed_scale = 1.0 if cfg.no_scale_embedding else math.sqrt(embed_dim)
 
         self.embed_positions = (
