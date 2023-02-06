@@ -16,11 +16,6 @@ To initialize a compressed model that well adapts to challenging tasks,
 we pre-train the model with a simplified version of the original task, less challenging enough for its reduced sizes.
 We propose a method to improve the performance of pre-training task by modeling the predictions of the model.
 
-#### 3. Layer-wise Attention Head Sampling 
-
-For further optimization, we train a wider compressed model, which has more attention heads than our compression target,
-and sample an efficient attention heads by layers.
-
 #### Code Description
 This repository is written based on the codes in [FAIRSEQ](https://github.com/facebookresearch/fairseq).
 Here's an overview of our codes.
