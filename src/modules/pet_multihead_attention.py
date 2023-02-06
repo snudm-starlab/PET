@@ -28,9 +28,8 @@ from fairseq.modules.quant_noise import quant_noise
 
 @with_incremental_state
 class PetMultiheadAttention(nn.Module):
-    """Multi-headed attention.
+    """Multi-headed attention module for PET.
 
-    ### edited by hyojin
     if is_shuffle is True, the model shuffle the query and key parameters.
 
     See "Attention Is All You Need" for more details.
