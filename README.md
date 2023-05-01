@@ -1,4 +1,4 @@
-# PET (Parameter-Efficient Knowledge Distillation on Transformer)
+# PET: Parameter-Efficient Knowledge Distillation on Transformer
 This project is a PyTorch implementation of PET (Parameter-Efficient Knowledge Distillation on Transformer). 
 PET proposes a novel approach that compresses transformer both the encoder and decoder, improving the performance of knowledge distillation (KD) on Transformer.
 
