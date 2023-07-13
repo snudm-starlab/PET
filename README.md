@@ -119,5 +119,23 @@ CUDA_VISIBLE_DEVICES=0 python ../src/train.py \
 ```
 This code is also saved in scripts/train_teacher.sh
 
+#### Reference Implementation
+Codes are written based on FAIRSEQ (https://github.com/facebookresearch/fairseq)
+
 ## Reference
-* FAIRSEQ: https://github.com/facebookresearch/fairseq
+If you use this code, please cite the following paper.
+```
+@article{10.1371/journal.pone.0288060,
+    author = {Hyojin Jeon and 
+              Seungcheol Park and 
+              Jin-Gee Kim and
+              U Kang},
+    journal = {PLOS ONE},
+    publisher = {Public Library of Science},
+    title = {PET: Parameter-efficient Knowledge Distillation on Transformer},
+    year = {2023},
+    month = {07},
+    volume = {18},
+    pages = {1-21}
+}
+```
