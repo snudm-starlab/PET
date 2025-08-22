@@ -125,7 +125,7 @@ Codes are written based on FAIRSEQ (https://github.com/facebookresearch/fairseq)
 ## Reference
 If you use this code, please cite the following paper.
 ```
-@article{10.1371/journal.pone.0288060,
+@article{JeonPKK23,
     author = {Hyojin Jeon and 
               Seungcheol Park and 
               Jin-Gee Kim and
